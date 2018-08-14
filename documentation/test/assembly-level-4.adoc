@@ -1,0 +1,15 @@
+:parent-context: {context}
+
+= Level 4
+
+`context - L4: {context}`
+
+`parent-context - L4: {parent-context}`
+
+Content
+
+`context - L4: {context}`
+
+`parent-context - L4: {parent-context}`
+
+:context: {parent-context}

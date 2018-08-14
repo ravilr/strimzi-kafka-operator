@@ -1,0 +1,18 @@
+:parent-context: {context}
+
+= Level 3
+
+:context: level-3-ctx
+
+`context - L3: {context}`
+
+`parent-context - L3: {parent-context}`
+
+include::assembly-level-4.adoc[leveloffset=+1]
+
+`context - L3: {context}`
+
+`parent-context - L3: {parent-context}`
+
+:context: {parent-context}
+

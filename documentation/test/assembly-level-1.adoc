@@ -1,0 +1,9 @@
+= Level 1
+
+:context: level-1-ctx
+
+`Context L1: {context}`
+
+include::assembly-level-2.adoc[leveloffset=+1]
+
+`Context L1: {context}`
