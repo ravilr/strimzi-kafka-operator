@@ -1,0 +1,18 @@
+ifdef::context[:parent-context: {context}]
+
+= Level 2
+
+:context: level-2-ctx
+
+`context - L2: {context}`
+
+`parent-context - L2: {parent-context}`
+
+include::assembly-level-3.adoc[leveloffset=+1]
+
+`context - L2: {context}`
+
+`parent-context - L2: {parent-context}`
+
+ifdef::parent-context[:context: {parent-context}]
+ifndef::parent-context[:!context:]
