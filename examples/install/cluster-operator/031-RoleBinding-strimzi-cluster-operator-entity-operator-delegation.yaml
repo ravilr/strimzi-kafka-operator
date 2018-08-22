@@ -1,7 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: RoleBinding
 metadata:
-  name: strimzi-cluster-operator-topic-operator-delegation
+  name: strimzi-cluster-operator-entity-operator-delegation
   labels:
     app: strimzi
 subjects:
@@ -9,6 +9,6 @@ subjects:
   name: strimzi-cluster-operator
   namespace: myproject
 roleRef:
-  kind: ClusterRole
-  name: strimzi-topic-operator
+  kind: Role
+  name: strimzi-entity-operator
   apiGroup: rbac.authorization.k8s.io
