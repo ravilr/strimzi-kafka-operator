@@ -51,6 +51,7 @@ import io.strimzi.api.kafka.model.CpuMemory;
 import io.strimzi.api.kafka.model.ExternalLogging;
 import io.strimzi.api.kafka.model.InlineLogging;
 import io.strimzi.api.kafka.model.JvmOptions;
+import io.strimzi.api.kafka.model.Kafka;
 import io.strimzi.api.kafka.model.Logging;
 import io.strimzi.api.kafka.model.PersistentClaimStorage;
 import io.strimzi.api.kafka.model.Resources;
@@ -1026,7 +1027,7 @@ public abstract class AbstractModel {
      * @return Collection with certificates
      * @throws IOException
      */
-    protected Map<String, CertAndKey> maybeCopyOrGenerateCerts(CertManager certManager, Secret secret, int replicasInSecret, CertAndKey caCert, BiFunction<String, Integer, String> podName) throws IOException {
+    protected Map<String, CertAndKey> maybeCopyOrGenerateCerts(CertManager certManager, Kafka kafka, Secret secret, int replicasInSecret, CertAndKey caCert, BiFunction<String, Integer, String> podName) throws IOException {
 
         Map<String, CertAndKey> certs = new HashMap<>();
 
@@ -1063,7 +1064,8 @@ public abstract class AbstractModel {
             sbj.setSubjectAltNames(sbjAltNames);
 
             certManager.generateCsr(brokerKeyFile, brokerCsrFile, sbj);
-            certManager.generateCert(brokerCsrFile, caCert.key(), caCert.cert(), brokerCertFile, sbj, CERTS_EXPIRATION_DAYS);
+            certManager.generateCert(brokerCsrFile, caCert.key(), caCert.cert(), brokerCertFile,
+                    sbj, ModelUtils.getCertificateValidity(kafka));
 
             certs.put(podName.apply(cluster, i),
                     new CertAndKey(Files.readAllBytes(brokerKeyFile.toPath()), Files.readAllBytes(brokerCertFile.toPath())));

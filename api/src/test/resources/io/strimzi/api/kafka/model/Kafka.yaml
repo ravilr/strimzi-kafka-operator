@@ -99,4 +99,8 @@ spec:
     metrics: {}
   topicOperator:
     watchedNamespace: my-ns
+  tlsCertificates:
+    renewalDays: 32
+    validityDays: 395
+    generateCertificateAuthority: false
 
