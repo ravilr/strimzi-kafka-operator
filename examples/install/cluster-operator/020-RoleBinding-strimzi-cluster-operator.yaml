@@ -10,5 +10,5 @@ subjects:
   namespace: myproject
 roleRef:
   kind: ClusterRole
-  name: strimzi-cluster-operator
+  name: strimzi-cluster-operator-namespaced
   apiGroup: rbac.authorization.k8s.io
