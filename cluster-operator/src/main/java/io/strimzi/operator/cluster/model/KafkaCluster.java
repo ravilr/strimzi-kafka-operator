@@ -318,7 +318,7 @@ public class KafkaCluster extends AbstractModel {
             }
 
         } catch (IOException e) {
-            e.printStackTrace();
+            log.warn("Error while generating certificates", e);
         }
 
         log.debug("End generating certificates");

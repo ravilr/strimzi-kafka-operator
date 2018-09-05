@@ -291,7 +291,7 @@ public abstract class AbstractModel {
         try {
             newSettings.store(sw, "Do not change this generated file. Logging can be configured in the corresponding kubernetes/openshift resource.");
         } catch (IOException e) {
-            e.printStackTrace();
+            log.warn("Error creating properties", e);
         }
         // remove date comment, because it is updated with each reconciliation which leads to restarting pods
         return sw.toString().replaceAll("#[A-Za-z]+ [A-Za-z]+ [0-9]+ [0-9]+:[0-9]+:[0-9]+ [A-Z]+ [0-9]+", "");

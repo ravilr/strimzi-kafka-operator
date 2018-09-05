@@ -218,7 +218,7 @@ public class ZookeeperCluster extends AbstractModel {
                 throw new NoCertificateSecretException("The cluster CA certificate Secret is missing");
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            log.warn("Error while generating certificates", e);
         }
 
         log.debug("End generating certificates");
