@@ -32,7 +32,6 @@ import io.strimzi.api.kafka.model.Resources;
 import io.strimzi.api.kafka.model.Sidecar;
 import io.strimzi.api.kafka.model.ZookeeperClusterSpec;
 import io.strimzi.certs.CertAndKey;
-import io.strimzi.certs.CertManager;
 import io.strimzi.operator.common.model.Labels;
 
 import java.io.IOException;
@@ -42,7 +41,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static io.strimzi.operator.cluster.model.ModelUtils.findSecretWithName;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 
@@ -148,7 +146,7 @@ public class ZookeeperCluster extends AbstractModel {
         this.validLoggerFields = getDefaultLogConfig();
     }
 
-    public static ZookeeperCluster fromCrd(CertManager certManager, Kafka kafkaAssembly, List<Secret> secrets) {
+    public static ZookeeperCluster fromCrd(Kafka kafkaAssembly, Certificates certificates) {
         ZookeeperCluster zk = new ZookeeperCluster(kafkaAssembly.getMetadata().getNamespace(), kafkaAssembly.getMetadata().getName(),
                 Labels.fromResource(kafkaAssembly).withKind(kafkaAssembly.getKind()));
         ZookeeperClusterSpec zookeeperClusterSpec = kafkaAssembly.getSpec().getZookeeper();
@@ -183,7 +181,7 @@ public class ZookeeperCluster extends AbstractModel {
         zk.setJvmOptions(zookeeperClusterSpec.getJvmOptions());
         zk.setUserAffinity(zookeeperClusterSpec.getAffinity());
         zk.setTolerations(zookeeperClusterSpec.getTolerations());
-        zk.generateCertificates(certManager, kafkaAssembly, secrets);
+        zk.generateCertificates(kafkaAssembly, certificates);
         zk.setTlsSidecar(zookeeperClusterSpec.getTlsSidecar());
         return zk;
     }
@@ -191,32 +189,16 @@ public class ZookeeperCluster extends AbstractModel {
     /**
      * Manage certificates generation based on those already present in the Secrets
      *
-     * @param certManager CertManager instance for handling certificates creation
      * @param kafka The Kafka CR.
-     * @param secrets The Secrets storing certificates
+     * @param certificates The certificates
      */
-    public void generateCertificates(CertManager certManager, Kafka kafka, List<Secret> secrets) {
+    public void generateCertificates(Kafka kafka, Certificates certificates) {
         log.debug("Generating certificates");
 
         try {
-            Secret internalCaSecret = findSecretWithName(secrets, getClusterCaName(cluster));
-            if (internalCaSecret != null) {
-
-                // get the generated CA private key + self-signed certificate for internal communications
-                clusterCA = new CertAndKey(
-                        decodeFromSecret(internalCaSecret, "cluster-ca.key"),
-                        decodeFromSecret(internalCaSecret, "cluster-ca.crt"));
-
-                // recover or generates the private key + certificate for each node
-                Secret nodesSecret = findSecretWithName(secrets, ZookeeperCluster.nodesSecretName(cluster));
-
-                int replicasSecret = nodesSecret == null ? 0 : (nodesSecret.getData().size() - 1) / 2;
-
-                log.debug("Cluster communication certificates");
-                certs = maybeCopyOrGenerateCerts(certManager, kafka, nodesSecret, replicasSecret, clusterCA, ZookeeperCluster::zookeeperPodName);
-            } else {
-                throw new NoCertificateSecretException("The cluster CA certificate Secret is missing");
-            }
+            clusterCA = certificates.clusterCa();
+            log.debug("Cluster communication certificates");
+            certs = certificates.generateZkCerts(kafka);
         } catch (IOException e) {
             log.warn("Error while generating certificates", e);
         }

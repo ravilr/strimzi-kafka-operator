@@ -51,34 +51,27 @@ import io.strimzi.api.kafka.model.CpuMemory;
 import io.strimzi.api.kafka.model.ExternalLogging;
 import io.strimzi.api.kafka.model.InlineLogging;
 import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.Kafka;
 import io.strimzi.api.kafka.model.Logging;
 import io.strimzi.api.kafka.model.PersistentClaimStorage;
 import io.strimzi.api.kafka.model.Resources;
 import io.strimzi.api.kafka.model.Storage;
 import io.strimzi.certs.CertAndKey;
-import io.strimzi.certs.CertManager;
-import io.strimzi.certs.Subject;
 import io.strimzi.operator.cluster.ClusterOperator;
 import io.strimzi.operator.common.model.Labels;
 import io.vertx.core.json.JsonObject;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.function.BiFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -90,11 +83,6 @@ import static java.util.Arrays.asList;
 public abstract class AbstractModel {
 
     protected static final Logger log = LogManager.getLogger(AbstractModel.class.getName());
-
-    // the Kubernetes service DNS domain is customizable on cluster creation but it's "cluster.local" by default
-    // there is no clean way to get it from a running application so we are passing it through an env var
-    public static final String KUBERNETES_SERVICE_DNS_DOMAIN =
-            System.getenv().getOrDefault("KUBERNETES_SERVICE_DNS_DOMAIN", "cluster.local");
 
     protected static final int CERTS_EXPIRATION_DAYS = 365;
 
@@ -1002,86 +990,6 @@ public abstract class AbstractModel {
         if (!trim.isEmpty()) {
             envVars.add(buildEnvVar(ENV_VAR_KAFKA_JVM_PERFORMANCE_OPTS, trim));
         }
-    }
-
-    /**
-     * Decode from Base64 a keyed value from a Secret
-     *
-     * @param secret Secret from which decoding the value
-     * @param key Key of the value to decode
-     * @return decoded value
-     */
-    protected byte[] decodeFromSecret(Secret secret, String key) {
-        return Base64.getDecoder().decode(secret.getData().get(key));
-    }
-
-    /**
-     * Copy already existing certificates from provided Secret based on number of effective replicas
-     * and maybe generate new ones for new replicas (i.e. scale-up)
-     *
-     * @param certManager CertManager instance for handling certificates creation
-     * @param secret The Secret from which getting already existing certificates
-     * @param replicasInSecret How many certificates are in the Secret
-     * @param caCert CA certificate to use for signing new certificates
-     * @param podName A function for resolving the Pod name
-     * @return Collection with certificates
-     * @throws IOException
-     */
-    protected Map<String, CertAndKey> maybeCopyOrGenerateCerts(CertManager certManager, Kafka kafka, Secret secret, int replicasInSecret, CertAndKey caCert, BiFunction<String, Integer, String> podName) throws IOException {
-
-        Map<String, CertAndKey> certs = new HashMap<>();
-
-        // copying the minimum number of certificates already existing in the secret
-        // scale up -> it will copy all certificates
-        // scale down -> it will copy just the requested number of replicas
-        for (int i = 0; i < Math.min(replicasInSecret, replicas); i++) {
-            log.debug("{} already exists", podName.apply(cluster, i));
-            certs.put(
-                    podName.apply(cluster, i),
-                    new CertAndKey(
-                            decodeFromSecret(secret, podName.apply(cluster, i) + ".key"),
-                            decodeFromSecret(secret, podName.apply(cluster, i) + ".crt")));
-        }
-
-        File brokerCsrFile = File.createTempFile("tls", "broker-csr");
-        File brokerKeyFile = File.createTempFile("tls", "broker-key");
-        File brokerCertFile = File.createTempFile("tls", "broker-cert");
-
-        // generate the missing number of certificates
-        // scale up -> generate new certificates for added replicas
-        // scale down -> does nothing
-        for (int i = replicasInSecret; i < replicas; i++) {
-            log.debug("{} to generate", podName.apply(cluster, i));
-
-            Subject sbj = new Subject();
-            sbj.setOrganizationName("io.strimzi");
-            sbj.setCommonName(getName());
-
-            Map<String, String> sbjAltNames = new HashMap<>();
-            sbjAltNames.put("DNS.1", getServiceName());
-            sbjAltNames.put("DNS.2", String.format("%s.%s.svc.%s", getServiceName(), namespace, KUBERNETES_SERVICE_DNS_DOMAIN));
-            sbjAltNames.put("DNS.3", String.format("%s.%s.%s.svc.%s", podName.apply(cluster, i), getHeadlessServiceName(), namespace, KUBERNETES_SERVICE_DNS_DOMAIN));
-            sbj.setSubjectAltNames(sbjAltNames);
-
-            certManager.generateCsr(brokerKeyFile, brokerCsrFile, sbj);
-            certManager.generateCert(brokerCsrFile, caCert.key(), caCert.cert(), brokerCertFile,
-                    sbj, ModelUtils.getCertificateValidity(kafka));
-
-            certs.put(podName.apply(cluster, i),
-                    new CertAndKey(Files.readAllBytes(brokerKeyFile.toPath()), Files.readAllBytes(brokerCertFile.toPath())));
-        }
-
-        if (!brokerCsrFile.delete()) {
-            log.warn("{} cannot be deleted", brokerCsrFile.getName());
-        }
-        if (!brokerKeyFile.delete()) {
-            log.warn("{} cannot be deleted", brokerKeyFile.getName());
-        }
-        if (!brokerCertFile.delete()) {
-            log.warn("{} cannot be deleted", brokerCertFile.getName());
-        }
-
-        return certs;
     }
 
     public static boolean deleteClaim(StatefulSet ss) {

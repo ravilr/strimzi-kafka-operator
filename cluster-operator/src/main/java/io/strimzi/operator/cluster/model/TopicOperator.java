@@ -21,21 +21,16 @@ import io.strimzi.api.kafka.model.Resources;
 import io.strimzi.api.kafka.model.Sidecar;
 import io.strimzi.api.kafka.model.TopicOperatorSpec;
 import io.strimzi.certs.CertAndKey;
-import io.strimzi.certs.CertManager;
-import io.strimzi.certs.Subject;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.operator.common.operator.resource.RoleBindingOperator;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static io.strimzi.operator.cluster.model.ModelUtils.findSecretWithName;
 import static java.util.Collections.singletonList;
 
 /**
@@ -217,12 +212,11 @@ public class TopicOperator extends AbstractModel {
     /**
      * Create a Topic Operator from given desired resource
      *
-     * @param certManager Certificate manager for certificates generation
      * @param kafkaAssembly desired resource with cluster configuration containing the topic operator one
-     * @param secrets Secrets containing already generated certificates
+     * @param certificates The certificates
      * @return Topic Operator instance, null if not configured in the ConfigMap
      */
-    public static TopicOperator fromCrd(CertManager certManager, Kafka kafkaAssembly, List<Secret> secrets) {
+    public static TopicOperator fromCrd(Kafka kafkaAssembly, Certificates certificates) {
         TopicOperator result;
         if (kafkaAssembly.getSpec().getTopicOperator() != null) {
             String namespace = kafkaAssembly.getMetadata().getNamespace();
@@ -239,7 +233,7 @@ public class TopicOperator extends AbstractModel {
             result.setLogging(tcConfig.getLogging());
             result.setResources(tcConfig.getResources());
             result.setUserAffinity(tcConfig.getAffinity());
-            result.generateCertificates(certManager, kafkaAssembly, secrets);
+            result.generateCertificates(kafkaAssembly, certificates);
             result.setTlsSidecar(tcConfig.getTlsSidecar());
         } else {
             result = null;
@@ -249,48 +243,15 @@ public class TopicOperator extends AbstractModel {
 
     /**
      * Manage certificates generation based on those already present in the Secrets
-     * @param certManager CertManager instance for handling certificates creation
      * @param kafka The kafka CR
-     * @param secrets The Secrets storing certificates
+     * @param certificates The certificates
      */
-    public void generateCertificates(CertManager certManager, Kafka kafka, List<Secret> secrets) {
+    public void generateCertificates(Kafka kafka, Certificates certificates) {
         log.debug("Generating certificates");
 
         try {
-            Secret clusterCaSecret = findSecretWithName(secrets, getClusterCaName(cluster));
-            if (clusterCaSecret != null) {
-                // get the generated CA private key + self-signed certificate for each broker
-                clusterCA = new CertAndKey(
-                        decodeFromSecret(clusterCaSecret, "cluster-ca.key"),
-                        decodeFromSecret(clusterCaSecret, "cluster-ca.crt"));
-
-                Secret topicOperatorSecret = findSecretWithName(secrets, TopicOperator.secretName(cluster));
-                if (topicOperatorSecret == null) {
-                    log.debug("Topic Operator certificate to generate");
-
-                    File csrFile = File.createTempFile("tls", "csr");
-                    File keyFile = File.createTempFile("tls", "key");
-                    File certFile = File.createTempFile("tls", "cert");
-
-                    Subject sbj = new Subject();
-                    sbj.setOrganizationName("io.strimzi");
-                    sbj.setCommonName(TopicOperator.topicOperatorName(cluster));
-
-                    certManager.generateCsr(keyFile, csrFile, sbj);
-                    certManager.generateCert(csrFile, clusterCA.key(), clusterCA.cert(),
-                            certFile, ModelUtils.getCertificateValidity(kafka));
-
-                    cert = new CertAndKey(Files.readAllBytes(keyFile.toPath()), Files.readAllBytes(certFile.toPath()));
-                } else {
-                    log.debug("Topic Operator certificate already exists");
-                    cert = new CertAndKey(
-                            decodeFromSecret(topicOperatorSecret, "entity-operator.key"),
-                            decodeFromSecret(topicOperatorSecret, "entity-operator.crt"));
-                }
-            } else {
-                throw new NoCertificateSecretException("The cluster CA certificate Secret is missing");
-            }
-
+            clusterCA = certificates.clusterCa();
+            cert = certificates.toCert(kafka);
         } catch (IOException e) {
             log.warn("Error while generating certificates", e);
         }

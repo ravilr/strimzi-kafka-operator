@@ -15,6 +15,7 @@ import io.strimzi.certs.Subject;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.AbstractModel;
 import io.strimzi.operator.cluster.model.ModelUtils;
+import io.strimzi.operator.cluster.model.NoCertificateSecretException;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
@@ -38,13 +39,13 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static io.strimzi.test.TestUtils.set;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -94,13 +95,23 @@ public class CertificateRenewalTest {
                 .endSpec()
             .build();
 
+        AtomicReference<Throwable> error = new AtomicReference<>();
         Async async = context.async();
         op.new ReconciliationState(reconciliation, kafka).reconcileClusterCa().setHandler(ar -> {
-            if (ar.failed()) ar.cause().printStackTrace();
-            context.assertTrue(ar.succeeded());
+            error.set(ar.cause());
             async.complete();
         });
         async.await();
+        if (error.get() != null) {
+            Throwable t = error.get();
+            if (t instanceof RuntimeException) {
+                throw (RuntimeException) t;
+            } else if (t instanceof Error) {
+                throw (Error) t;
+            } else {
+                throw new RuntimeException(t);
+            }
+        }
         return c;
     }
 
@@ -143,7 +154,7 @@ public class CertificateRenewalTest {
         assertNotNull(c.getValue().getData().get("cluster-ca.crt"));
     }
 
-    @Test
+    @Test(expected = NoCertificateSecretException.class)
     public void certsNotGeneratedInitiallyManual(TestContext context) throws IOException {
         TlsCertificates tlsCertificates = new TlsCertificatesBuilder()
                 .withValidityDays(100)
@@ -152,8 +163,6 @@ public class CertificateRenewalTest {
                 .build();
         secrets.clear();
         ArgumentCaptor<Secret> c = reconcileCa(context, tlsCertificates);
-        assertTrue(c.getValue().getData().isEmpty());
-        // XXX It would be nice to be able to assert on the WARN log message
     }
 
     @Test

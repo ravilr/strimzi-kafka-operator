@@ -54,7 +54,7 @@ public class EntityOperatorTest {
                     .build();
 
     private final CertManager certManager = new MockCertManager();
-    private final EntityOperator entityOperator = EntityOperator.fromCrd(certManager, resource, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster));
+    private final EntityOperator entityOperator = EntityOperator.fromCrd(resource, ResourceUtils.createInitialCertificates(namespace, cluster));
 
     @Test
     public void testGenerateDeployment() {
@@ -94,7 +94,7 @@ public class EntityOperatorTest {
                         .withEntityOperator(entityOperatorSpec)
                         .endSpec()
                         .build();
-        EntityOperator entityOperator = EntityOperator.fromCrd(certManager, resource, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster));
+        EntityOperator entityOperator = EntityOperator.fromCrd(resource, ResourceUtils.createInitialCertificates(namespace, cluster));
 
         assertNull(entityOperator.getTopicOperator());
         assertNull(entityOperator.getUserOperator());

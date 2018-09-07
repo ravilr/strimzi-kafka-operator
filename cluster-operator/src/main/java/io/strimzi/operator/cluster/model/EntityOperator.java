@@ -18,13 +18,9 @@ import io.strimzi.api.kafka.model.Kafka;
 import io.strimzi.api.kafka.model.Resources;
 import io.strimzi.api.kafka.model.Sidecar;
 import io.strimzi.certs.CertAndKey;
-import io.strimzi.certs.CertManager;
-import io.strimzi.certs.Subject;
 import io.strimzi.operator.common.model.Labels;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
@@ -32,7 +28,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static io.strimzi.operator.cluster.model.ModelUtils.findSecretWithName;
 import static java.util.Collections.singletonList;
 
 /**
@@ -125,12 +120,11 @@ public class EntityOperator extends AbstractModel {
     /**
      * Create a Entity Operator from given desired resource
      *
-     * @param certManager Certificate manager for certificates generation
      * @param kafkaAssembly desired resource with cluster configuration containing the Entity Operator one
-     * @param secrets Secrets containing already generated certificates
+     * @param certificates The certificates
      * @return Entity Operator instance, null if not configured in the ConfigMap
      */
-    public static EntityOperator fromCrd(CertManager certManager, Kafka kafkaAssembly, List<Secret> secrets) {
+    public static EntityOperator fromCrd(Kafka kafkaAssembly, Certificates certificates) {
         EntityOperator result = null;
         EntityOperatorSpec entityOperatorSpec = kafkaAssembly.getSpec().getEntityOperator();
         if (entityOperatorSpec != null) {
@@ -148,7 +142,7 @@ public class EntityOperator extends AbstractModel {
             result.setUserOperator(EntityUserOperator.fromCrd(kafkaAssembly));
             result.setDeployed(result.getTopicOperator() != null || result.getUserOperator() != null);
             if (result.isDeployed()) {
-                result.generateCertificates(certManager, kafkaAssembly, secrets);
+                result.generateCertificates(kafkaAssembly, certificates);
             }
         }
         return result;
@@ -157,47 +151,15 @@ public class EntityOperator extends AbstractModel {
     /**
      * Manage certificates generation based on those already present in the Secrets
      *
-     * @param certManager CertManager instance for handling certificates creation
-     * @param secrets The Secrets storing certificates
+     * @param kafka The Kafka assembly
+     * @param certificates The certificates
      */
-    public void generateCertificates(CertManager certManager, Kafka kafka, List<Secret> secrets) {
+    public void generateCertificates(Kafka kafka, Certificates certificates) {
         log.debug("Generating certificates");
 
         try {
-            Secret clusterCaSecret = findSecretWithName(secrets, getClusterCaName(cluster));
-            if (clusterCaSecret != null) {
-                // get the generated CA private key + self-signed certificate for each broker
-                clusterCA = new CertAndKey(
-                        decodeFromSecret(clusterCaSecret, "cluster-ca.key"),
-                        decodeFromSecret(clusterCaSecret, "cluster-ca.crt"));
-
-                Secret entityOperatorSecret = findSecretWithName(secrets, EntityOperator.secretName(cluster));
-                if (entityOperatorSecret == null) {
-                    log.debug("Entity Operator certificate to generate");
-
-                    File csrFile = File.createTempFile("tls", "csr");
-                    File keyFile = File.createTempFile("tls", "key");
-                    File certFile = File.createTempFile("tls", "cert");
-
-                    Subject sbj = new Subject();
-                    sbj.setOrganizationName("io.strimzi");
-                    sbj.setCommonName(EntityOperator.entityOperatorName(cluster));
-
-                    certManager.generateCsr(keyFile, csrFile, sbj);
-                    certManager.generateCert(csrFile, clusterCA.key(), clusterCA.cert(),
-                            certFile, ModelUtils.getCertificateValidity(kafka));
-
-                    cert = new CertAndKey(Files.readAllBytes(keyFile.toPath()), Files.readAllBytes(certFile.toPath()));
-                } else {
-                    log.debug("Entity Operator certificate already exists");
-                    cert = new CertAndKey(
-                            decodeFromSecret(entityOperatorSecret, "entity-operator.key"),
-                            decodeFromSecret(entityOperatorSecret, "entity-operator.crt"));
-                }
-            } else {
-                throw new NoCertificateSecretException("The cluster CA certificate Secret is missing");
-            }
-
+            clusterCA = certificates.clusterCa();
+            cert = certificates.eoCert(kafka);
         } catch (IOException e) {
             log.warn("Error while generating certificates", e);
         }

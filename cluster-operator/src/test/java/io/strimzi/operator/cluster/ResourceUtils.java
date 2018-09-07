@@ -27,6 +27,7 @@ import io.strimzi.api.kafka.model.Storage;
 import io.strimzi.api.kafka.model.TopicOperatorSpec;
 import io.strimzi.api.kafka.model.ZookeeperClusterSpec;
 import io.strimzi.operator.cluster.model.AbstractModel;
+import io.strimzi.operator.cluster.model.Certificates;
 import io.strimzi.operator.cluster.model.KafkaCluster;
 import io.strimzi.operator.cluster.model.ZookeeperCluster;
 import io.strimzi.operator.common.model.Labels;
@@ -106,6 +107,15 @@ public class ResourceUtils {
                 createInitialClusterCaSecret(clusterCmNamespace, clusterName, MockCertManager.clusterCaKey(), MockCertManager.clusterCaCert())
         );
         return secrets;
+    }
+
+    public static Certificates createInitialCertificates(String clusterCmNamespace, String clusterName) {
+        List<Secret> kafkaClusterInitialSecrets = createKafkaClusterInitialSecrets(clusterCmNamespace, clusterName);
+        return createInitialCertificates(clusterName, kafkaClusterInitialSecrets);
+    }
+
+    public static Certificates createInitialCertificates(String clusterName, List<Secret> kafkaClusterInitialSecrets) {
+        return new Certificates(new MockCertManager(), clusterName, kafkaClusterInitialSecrets);
     }
 
     public static Secret createInitialClusterCaSecret(String clusterCmNamespace, String clusterName, String caKey, String caCert) {
@@ -194,6 +204,10 @@ public class ResourceUtils {
         secrets.add(builder.build());
 
         return secrets;
+    }
+
+    public static Certificates createInitialCertificatesWithReplicas(String clusterCmNamespace, String clusterName, int kafkaReplicas, int zkReplicas) {
+        return createInitialCertificates(clusterName, createKafkaClusterSecretsWithReplicas(clusterCmNamespace, clusterName, kafkaReplicas, zkReplicas));
     }
 
     public static Kafka createKafkaCluster(String clusterCmNamespace, String clusterCmName, int replicas,

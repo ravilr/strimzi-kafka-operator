@@ -11,6 +11,7 @@ import io.strimzi.api.kafka.model.InlineLogging;
 import io.strimzi.api.kafka.model.Kafka;
 import io.strimzi.api.kafka.model.KafkaBuilder;
 import io.strimzi.operator.cluster.ResourceUtils;
+import io.strimzi.operator.cluster.model.Certificates;
 import io.strimzi.operator.cluster.model.KafkaCluster;
 import io.strimzi.operator.common.operator.MockCertManager;
 
@@ -43,8 +44,8 @@ public class KafkaSetOperatorTest {
     @Before
     public void before() {
         MockCertManager certManager = new MockCertManager();
-        a = KafkaCluster.fromCrd(certManager, getResource(), getInitialSecrets(getResource().getMetadata().getName())).generateStatefulSet(true);
-        b = KafkaCluster.fromCrd(certManager, getResource(), getInitialSecrets(getResource().getMetadata().getName())).generateStatefulSet(true);
+        a = KafkaCluster.fromCrd(getResource(), new Certificates(certManager, getResource().getMetadata().getName(), getInitialSecrets(getResource().getMetadata().getName()))).generateStatefulSet(true);
+        b = KafkaCluster.fromCrd(getResource(), new Certificates(certManager, getResource().getMetadata().getName(), getInitialSecrets(getResource().getMetadata().getName()))).generateStatefulSet(true);
     }
 
     private Kafka getResource() {

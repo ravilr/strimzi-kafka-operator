@@ -75,7 +75,7 @@ public class TopicOperatorTest {
 
     private final CertManager certManager = new MockCertManager();
     private final Kafka resource = ResourceUtils.createKafkaCluster(namespace, cluster, replicas, image, healthDelay, healthTimeout, metricsCm, kafkaConfig, zooConfig, storage, topicOperator, kafkaLogJson, zooLogJson);
-    private final TopicOperator tc = TopicOperator.fromCrd(certManager, resource, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster));
+    private final TopicOperator tc = TopicOperator.fromCrd(resource, new Certificates(certManager, cluster, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster)));
 
     private List<EnvVar> getExpectedEnvVars() {
         List<EnvVar> expected = new ArrayList<>();
@@ -95,7 +95,7 @@ public class TopicOperatorTest {
     public void testFromConfigMapNoConfig() {
         Kafka resource = ResourceUtils.createKafkaCluster(namespace, cluster, replicas, image,
                 healthDelay, healthTimeout, metricsCm, null, kafkaLogJson, zooLogJson);
-        TopicOperator tc = TopicOperator.fromCrd(certManager, resource, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster));
+        TopicOperator tc = TopicOperator.fromCrd(resource, new Certificates(certManager, cluster, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster)));
         assertNull(tc);
     }
 
@@ -104,7 +104,7 @@ public class TopicOperatorTest {
         Kafka resource = ResourceUtils.createKafkaCluster(namespace, cluster, replicas, image,
                 healthDelay, healthTimeout, metricsCm, kafkaConfig, zooConfig,
                 storage, new TopicOperatorSpec(), kafkaLogJson, zooLogJson);
-        TopicOperator tc = TopicOperator.fromCrd(certManager, resource, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster));
+        TopicOperator tc = TopicOperator.fromCrd(resource, new Certificates(certManager, cluster, ResourceUtils.createKafkaClusterInitialSecrets(namespace, cluster)));
         Assert.assertEquals(TopicOperatorSpec.DEFAULT_IMAGE, tc.getImage());
         assertEquals(namespace, tc.getWatchedNamespace());
         assertEquals(TopicOperatorSpec.DEFAULT_FULL_RECONCILIATION_INTERVAL_SECONDS * 1000, tc.getReconciliationIntervalMs());

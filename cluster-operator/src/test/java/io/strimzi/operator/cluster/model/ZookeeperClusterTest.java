@@ -52,7 +52,7 @@ public class ZookeeperClusterTest {
 
     private final CertManager certManager = new MockCertManager();
     private final Kafka ka = ResourceUtils.createKafkaCluster(namespace, cluster, replicas, image, healthDelay, healthTimeout, metricsCmJson, configurationJson, zooConfigurationJson, null, null, kafkaLogConfigJson, zooLogConfigJson);
-    private final ZookeeperCluster zc = ZookeeperCluster.fromCrd(certManager, ka, ResourceUtils.createKafkaClusterInitialSecrets(namespace, ka.getMetadata().getName()));
+    private final ZookeeperCluster zc = ZookeeperCluster.fromCrd(ka, ResourceUtils.createInitialCertificates(namespace, ka.getMetadata().getName()));
 
     @Rule
     public ResourceTester<Kafka, ZookeeperCluster> resourceTester = new ResourceTester<>(Kafka.class, ZookeeperCluster::fromCrd);
@@ -171,7 +171,7 @@ public class ZookeeperClusterTest {
                     .endKafka()
                 .endSpec()
             .build();
-        ZookeeperCluster zc = ZookeeperCluster.fromCrd(certManager, ka, ResourceUtils.createKafkaClusterInitialSecrets(namespace, ka.getMetadata().getName()));
+        ZookeeperCluster zc = ZookeeperCluster.fromCrd(ka, ResourceUtils.createInitialCertificates(namespace, ka.getMetadata().getName()));
         StatefulSet ss = zc.generateStatefulSet(true);
         assertFalse(ZookeeperCluster.deleteClaim(ss));
 
@@ -182,7 +182,7 @@ public class ZookeeperClusterTest {
                     .endKafka()
                 .endSpec()
             .build();
-        zc = ZookeeperCluster.fromCrd(certManager, ka, ResourceUtils.createKafkaClusterInitialSecrets(namespace, ka.getMetadata().getName()));
+        zc = ZookeeperCluster.fromCrd(ka, ResourceUtils.createInitialCertificates(namespace, ka.getMetadata().getName()));
         ss = zc.generateStatefulSet(true);
         assertFalse(ZookeeperCluster.deleteClaim(ss));
 
@@ -193,7 +193,7 @@ public class ZookeeperClusterTest {
                     .endZookeeper()
                 .endSpec()
             .build();
-        zc = ZookeeperCluster.fromCrd(certManager, ka, ResourceUtils.createKafkaClusterInitialSecrets(namespace, ka.getMetadata().getName()));
+        zc = ZookeeperCluster.fromCrd(ka, ResourceUtils.createInitialCertificates(namespace, ka.getMetadata().getName()));
         ss = zc.generateStatefulSet(true);
         assertTrue(ZookeeperCluster.deleteClaim(ss));
     }

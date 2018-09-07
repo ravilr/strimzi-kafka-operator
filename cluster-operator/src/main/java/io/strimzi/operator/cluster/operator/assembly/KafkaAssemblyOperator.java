@@ -21,6 +21,7 @@ import io.strimzi.certs.CertManager;
 import io.strimzi.certs.SecretCertProvider;
 import io.strimzi.certs.Subject;
 import io.strimzi.operator.cluster.model.AbstractModel;
+import io.strimzi.operator.cluster.model.Certificates;
 import io.strimzi.operator.cluster.model.EntityOperator;
 import io.strimzi.operator.cluster.model.EntityTopicOperator;
 import io.strimzi.operator.cluster.model.EntityUserOperator;
@@ -187,7 +188,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         private final Kafka kafkaAssembly;
         private final Reconciliation reconciliation;
 
-        private List<Secret> assemblySecrets;
+        private Certificates certificates;
         private boolean clusterCaCertRenewed;
         private boolean clusterCaCertsRemoved;
 
@@ -240,6 +241,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                         String clusterCaName = AbstractModel.getClusterCaName(reconciliation.name());
                         List<Secret> clusterSecrets = secretOperations.list(reconciliation.namespace(), caLabels);
                         Secret clusterCa = findSecretWithName(clusterSecrets, clusterCaName);
+                        clusterSecrets.remove(clusterCa);
                         SecretCertProvider secretCertProvider = new SecretCertProvider();
                         Secret secret;
                         X509Certificate currentCert = cert(clusterCa, CLUSTER_CA_CRT);
@@ -267,7 +269,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                         secretOperations.reconcile(reconciliation.namespace(), clusterCaName, secret)
                                 .compose(x -> {
                                     clusterSecrets.add(secret);
-                                    this.assemblySecrets = clusterSecrets;
+                                    this.certificates = new Certificates(certManager, name, clusterSecrets);
                                     this.clusterCaCertRenewed = needsRenewal;
                                     this.clusterCaCertsRemoved = certsRemoved;
                                     future.complete(this);
@@ -426,7 +428,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             vertx.createSharedWorkerExecutor("kubernetes-ops-pool").executeBlocking(
                 future -> {
                     try {
-                        this.zkCluster = ZookeeperCluster.fromCrd(certManager, kafkaAssembly, assemblySecrets);
+                        this.zkCluster = ZookeeperCluster.fromCrd(kafkaAssembly, certificates);
 
                         ConfigMap logAndMetricsConfigMap = zkCluster.generateMetricsAndLogConfigMap(zkCluster.getLogging() instanceof ExternalLogging ?
                                 configMapOperations.get(kafkaAssembly.getMetadata().getNamespace(), ((ExternalLogging) zkCluster.getLogging()).getName()) :
@@ -521,7 +523,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             vertx.createSharedWorkerExecutor("kubernetes-ops-pool").<ReconciliationState>executeBlocking(
                 future -> {
                     try {
-                        this.kafkaCluster = KafkaCluster.fromCrd(certManager, kafkaAssembly, assemblySecrets);
+                        this.kafkaCluster = KafkaCluster.fromCrd(kafkaAssembly, certificates);
 
                         ConfigMap logAndMetricsConfigMap = kafkaCluster.generateMetricsAndLogConfigMap(
                                 kafkaCluster.getLogging() instanceof ExternalLogging ?
@@ -635,7 +637,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             vertx.createSharedWorkerExecutor("kubernetes-ops-pool").<ReconciliationState>executeBlocking(
                 future -> {
                     try {
-                        this.topicOperator = TopicOperator.fromCrd(certManager, kafkaAssembly, assemblySecrets);
+                        this.topicOperator = TopicOperator.fromCrd(kafkaAssembly, certificates);
 
                         if (topicOperator != null) {
                             ConfigMap logAndMetricsConfigMap = topicOperator.generateMetricsAndLogConfigMap(
@@ -701,7 +703,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             vertx.createSharedWorkerExecutor("kubernetes-ops-pool").<ReconciliationState>executeBlocking(
                 future -> {
                     try {
-                        EntityOperator entityOperator = EntityOperator.fromCrd(certManager, kafkaAssembly, assemblySecrets);
+                        EntityOperator entityOperator = EntityOperator.fromCrd(kafkaAssembly, certificates);
 
                         if (entityOperator != null) {
                             EntityTopicOperator topicOperator = entityOperator.getTopicOperator();
