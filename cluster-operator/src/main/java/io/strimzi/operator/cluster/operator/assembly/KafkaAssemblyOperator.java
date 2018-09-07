@@ -82,6 +82,7 @@ import static java.util.Collections.emptyMap;
 public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesClient, Kafka, KafkaAssemblyList, DoneableKafka, Resource<Kafka, DoneableKafka>> {
     private static final Logger log = LogManager.getLogger(KafkaAssemblyOperator.class.getName());
 
+
     private final long operationTimeoutMs;
 
     private final ZookeeperSetOperator zkSetOperations;
@@ -120,6 +121,9 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         Future<Void> chainFuture = Future.future();
         new ReconciliationState(reconciliation, kafkaAssembly)
                 .reconcileClusterCa()
+                // Roll everything so the new CA is added to the trust store.
+                .compose(state -> state.rollingUpdateForNewCaCert())
+
                 .compose(state -> state.getZookeeperState())
                 .compose(state -> state.zkScaleDown())
                 .compose(state -> state.zkService())
@@ -183,6 +187,8 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         private final Reconciliation reconciliation;
 
         private List<Secret> assemblySecrets;
+        private boolean clusterCaCertRenewed;
+        private boolean clusterCaCertsRemoved;
 
         private ZookeeperCluster zkCluster;
         private Service zkService;
@@ -237,9 +243,11 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                         Secret secret;
                         X509Certificate currentCert = cert(clusterCa, CLUSTER_CA_CRT);
                         boolean needsRenewal = currentCert != null && certNeedsRenewal(tlsCertificates, currentCert);
+                        final boolean certsRemoved;
                         final Map<String, String> newData;
                         if (tlsCertificates != null && !tlsCertificates.isGenerateCertificateAuthority()) {
                             newData = checkProvidedCert(reconciliation, clusterCaName, clusterCa, currentCert, needsRenewal);
+                            certsRemoved = false;
                         } else {
                             if (clusterCa == null || needsRenewal) {
                                 newData = createOrRenewCert(reconciliation, tlsCertificates, clusterCaName, clusterCa, currentCert);
@@ -247,7 +255,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                                 log.debug("{}: The cluster CA {} already exists and does not need renewing", reconciliation, clusterCaName);
                                 newData = clusterCa.getData();
                             }
-                            removeExpiredCerts(newData);
+                            certsRemoved = removeExpiredCerts(newData) > 0;
                         }
                         secret = secretCertProvider.createSecret(reconciliation.namespace(), clusterCaName,
                                 newData, caLabels.toMap());
@@ -256,6 +264,8 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                                 .compose(x -> {
                                     clusterSecrets.add(secret);
                                     this.assemblySecrets = clusterSecrets;
+                                    this.clusterCaCertRenewed = needsRenewal;
+                                    this.clusterCaCertsRemoved = certsRemoved;
                                     future.complete(this);
                                 }, future);
                     } catch (Throwable e) {
@@ -267,7 +277,8 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             return result;
         }
 
-        private void removeExpiredCerts(Map<String, String> newData) {
+        private int removeExpiredCerts(Map<String, String> newData) {
+            int removed = 0;
             Iterator<String> iter = newData.keySet().iterator();
             while (iter.hasNext()) {
                 Pattern pattern = Pattern.compile("cluster-ca-" + "([0-9T:-]{19}).(crt|key)");
@@ -279,9 +290,11 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                     Instant parse = DateTimeFormatter.ISO_DATE_TIME.parse(date, Instant::from);
                     if (parse.isBefore(Instant.now())) {
                         iter.remove();
+                        removed++;
                     }
                 }
             }
+            return removed;
         }
 
         private Map<String, String> createOrRenewCert(Reconciliation reconciliation, TlsCertificates tlsCertificates, String clusterCaName, Secret clusterCa, X509Certificate currentCert) throws IOException {
@@ -372,6 +385,33 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                 throw new RuntimeException("Certificate in key " + key + " of Secret " + secret.getMetadata().getName() + " could not be parsed");
             }
         }
+
+        Future<ReconciliationState> rollingUpdateForNewCaCert() {
+            if (this.clusterCaCertRenewed || this.clusterCaCertsRemoved) {
+                return zkSetOperations.getAsync(namespace, ZookeeperCluster.zookeeperClusterName(name))
+                        .compose(ss -> zkSetOperations.maybeRollingUpdate(ss, true))
+                        .compose(i -> kafkaSetOperations.getAsync(namespace, KafkaCluster.kafkaClusterName(name)))
+                        .compose(ss -> kafkaSetOperations.maybeRollingUpdate(ss, true))
+                        .compose(i -> {
+                            if (topicOperator != null) {
+                                return deploymentOperations.rollingUpdate(namespace, TopicOperator.topicOperatorName(name), operationTimeoutMs);
+                            } else {
+                                return Future.succeededFuture();
+                            }
+                        })
+                        .compose(i -> {
+                            if (entityOperator != null) {
+                                return deploymentOperations.rollingUpdate(namespace, EntityOperator.entityOperatorName(name), operationTimeoutMs);
+                            } else {
+                                return Future.succeededFuture();
+                            }
+                        })
+                        .map(i -> this);
+            } else {
+                return Future.succeededFuture(this);
+            }
+        }
+
 
         Future<ReconciliationState> getZookeeperState() {
             Future<ReconciliationState> fut = Future.future();
