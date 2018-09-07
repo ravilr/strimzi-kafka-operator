@@ -31,7 +31,6 @@ public class Certificates {
             System.getenv().getOrDefault("KUBERNETES_SERVICE_DNS_DOMAIN", "cluster.local");
 
     private final CertManager certManager;
-    private final boolean certsRemoved;
     private final boolean clusterCaCertRenewed;
     private final CertAndKey clusterCa;
     private CertAndKey clientsCa;
@@ -76,24 +75,19 @@ public class Certificates {
         } else if (clusterCa.getData().get("cluster-ca.crt") == null) {
             throw new NoCertificateSecretException("The cluster CA certificate Secret is missing data.cluster-ca.crt");
         }
-        this.clusterCa = new CertAndKey(
-                decodeFromSecret(clusterCa, "cluster-ca.key"),
-                decodeFromSecret(clusterCa, "cluster-ca.crt"));
-        this.clientsCa = clientsCa == null ? null : new CertAndKey(
-                decodeFromSecret(clientsCa, "clients-ca.key"),
-                decodeFromSecret(clientsCa, "clients-ca.crt"));
+        this.clusterCa = asCertAndKey(clusterCa, "cluster-ca.key", "cluster-ca.crt");
+        this.clientsCa = asCertAndKey(clientsCa, "clients-ca.key", "clients-ca.crt");
         this.brokersSecret = brokersSecret;
-        this.eoCertAndKey = eoSecrets == null ? null : new CertAndKey(
-                decodeFromSecret(eoSecrets, "entity-operator.key"),
-                decodeFromSecret(eoSecrets, "entity-operator.crt"));
-        this.toCertAndKey = toSecret == null ? null : new CertAndKey(
-                decodeFromSecret(toSecret, "entity-operator.key"),
-                decodeFromSecret(toSecret, "entity-operator.crt"));
+        this.eoCertAndKey = asCertAndKey(eoSecrets, "entity-operator.key", "entity-operator.crt");
+        this.toCertAndKey = asCertAndKey(toSecret, "entity-operator.key", "entity-operator.crt");
         this.zkNodesSecret = zkNodesSecret;
     }
 
-    private static byte[] decodeFromSecret(Secret secret, String key) {
-        return Base64.getDecoder().decode(secret.getData().get(key));
+    private CertAndKey asCertAndKey(Secret secret, String key, String cert) {
+        Base64.Decoder decoder = Base64.getDecoder();
+        return secret == null ? null : new CertAndKey(
+                decoder.decode(secret.getData().get(key)),
+                decoder.decode(secret.getData().get(cert)));
     }
 
     public CertAndKey clusterCa() {
@@ -194,9 +188,7 @@ public class Certificates {
             log.debug("{} already exists", podName);
             certs.put(
                     podName,
-                    new CertAndKey(
-                            decodeFromSecret(secret, podName + ".key"),
-                            decodeFromSecret(secret, podName + ".crt")));
+                    asCertAndKey(secret, podName + ".key", podName + ".crt"));
         }
 
         File brokerCsrFile = File.createTempFile("tls", "broker-csr");
