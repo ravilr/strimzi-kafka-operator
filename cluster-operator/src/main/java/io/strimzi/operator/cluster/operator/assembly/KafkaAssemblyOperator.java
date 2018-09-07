@@ -61,6 +61,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -243,6 +244,9 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                         Secret secret;
                         X509Certificate currentCert = cert(clusterCa, CLUSTER_CA_CRT);
                         boolean needsRenewal = currentCert != null && certNeedsRenewal(tlsCertificates, currentCert);
+                        if (needsRenewal) {
+                            log.debug("{}: Cluster CA certificate needs to be renewed", reconciliation);
+                        }
                         final boolean certsRemoved;
                         final Map<String, String> newData;
                         if (tlsCertificates != null && !tlsCertificates.isGenerateCertificateAuthority()) {
@@ -289,6 +293,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                     String date = matcher.group(1) + "Z";
                     Instant parse = DateTimeFormatter.ISO_DATE_TIME.parse(date, Instant::from);
                     if (parse.isBefore(Instant.now())) {
+                        log.debug("Removing {} from Secret because it has expired", key);
                         iter.remove();
                         removed++;
                     }
@@ -358,8 +363,10 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         }
 
         private boolean certNeedsRenewal(TlsCertificates tlsCertificates, X509Certificate cert)  {
-            long msTillExpired = cert.getNotAfter().getTime() - System.currentTimeMillis();
-            return msTillExpired / (24L * 60L * 60L * 1000L) < ModelUtils.getRenewalDays(tlsCertificates);
+            Date notAfter = cert.getNotAfter();
+            log.trace("Certificate {} expires on {}", cert.getSubjectDN(), notAfter);
+            long msTillExpired = notAfter.getTime() - System.currentTimeMillis();
+            return msTillExpired < ModelUtils.getRenewalDays(tlsCertificates) * 24L * 60L * 60L * 1000L;
         }
 
         private X509Certificate cert(Secret secret, String key)  {
