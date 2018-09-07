@@ -31,6 +31,8 @@ public class Certificates {
             System.getenv().getOrDefault("KUBERNETES_SERVICE_DNS_DOMAIN", "cluster.local");
 
     private final CertManager certManager;
+    private final boolean certsRemoved;
+    private final boolean clusterCaCertRenewed;
     private final CertAndKey clusterCa;
     private CertAndKey clientsCa;
     private final Secret brokersSecret;
@@ -39,7 +41,12 @@ public class Certificates {
     private final Secret zkNodesSecret;
 
     public Certificates(CertManager certManager, String clusterName, List<Secret> secrets) {
+        this(certManager, clusterName, secrets, false);
+    }
+
+    public Certificates(CertManager certManager, String clusterName, List<Secret> secrets, boolean needsRenewal) {
         this.certManager = certManager;
+        this.clusterCaCertRenewed = needsRenewal;
         Secret clusterCa = null;
         Secret clientsCa = null;
         Secret brokersSecret = null;
@@ -101,14 +108,14 @@ public class Certificates {
     }
 
     public CertAndKey toCert(Kafka kafka) throws IOException {
-        if (toCertAndKey == null) {
+        if (toCertAndKey == null || this.clusterCaCertRenewed) {
             toCertAndKey = generateToCert(kafka);
         }
         return toCertAndKey;
     }
 
     public CertAndKey eoCert(Kafka kafka) throws IOException {
-        if (eoCertAndKey == null) {
+        if (eoCertAndKey == null || this.clusterCaCertRenewed) {
             eoCertAndKey = generateEoCert(kafka);
         }
         return eoCertAndKey;
@@ -176,7 +183,7 @@ public class Certificates {
                                                                Kafka kafka,
                                                                Secret secret,
                                                                Function<Integer, String> podNameFn) throws IOException {
-        int replicasInSecret = secret == null ? 0 : (secret.getData().size() - 1) / 2;
+        int replicasInSecret = secret == null || clusterCaCertRenewed ? 0 : (secret.getData().size() - 1) / 2;
         Map<String, CertAndKey> certs = new HashMap<>();
         // copying the minimum number of certificates already existing in the secret
         // scale up -> it will copy all certificates
