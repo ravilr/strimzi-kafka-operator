@@ -327,7 +327,29 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         }
 
         Future<ReconciliationState> zkAncillaryCm() {
-            return withZkAncillaryCmChanged(configMapOperations.reconcile(namespace, zkCluster.getAncillaryConfigName(), zkMetricsAndLogsConfigMap));
+            Future<ReconciliationState> result = Future.future();
+
+            vertx.createSharedWorkerExecutor("kubernetes-ops-pool").executeBlocking(
+                future -> {
+                    ConfigMap current = configMapOperations.get(namespace, zkCluster.getAncillaryConfigName());
+                    boolean onlyMetricsSettingChanged = onlyMetricsSettingChanged(current, zkMetricsAndLogsConfigMap);
+                    future.complete(onlyMetricsSettingChanged);
+                }, res -> {
+                    if (res.succeeded())  {
+                        boolean onlyMetricsSettingChanged = (boolean) res.result();
+                        withZkAncillaryCmChanged(onlyMetricsSettingChanged, configMapOperations.reconcile(namespace, zkCluster.getAncillaryConfigName(), zkMetricsAndLogsConfigMap)).setHandler(res2 -> {
+                            if (res2.succeeded())   {
+                                result.complete(res2.result());
+                            } else {
+                                result.fail(res2.cause());
+                            }
+                        });
+                    } else {
+                        result.fail(res.cause());
+                    }
+                });
+
+            return result;
         }
 
         Future<ReconciliationState> zkNodesSecret() {
@@ -358,9 +380,14 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             return withVoid(serviceOperations.endpointReadiness(namespace, zkHeadlessService, 1_000, operationTimeoutMs));
         }
 
-        Future<ReconciliationState> withZkAncillaryCmChanged(Future<ReconcileResult<ConfigMap>> r) {
+        Future<ReconciliationState> withZkAncillaryCmChanged(boolean onlyMetricsSettingChanged, Future<ReconcileResult<ConfigMap>> r) {
             return r.map(rr -> {
-                this.zkForcedRestart = rr instanceof ReconcileResult.Patched;
+                if (onlyMetricsSettingChanged) {
+                    log.debug("Only metrics setting changed - not triggering rolling update");
+                    this.zkForcedRestart = false;
+                } else {
+                    this.zkForcedRestart = rr instanceof ReconcileResult.Patched;
+                }
                 return this;
             });
         }
@@ -404,9 +431,14 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             });
         }
 
-        Future<ReconciliationState> withKafkaAncillaryCmChanged(Future<ReconcileResult<ConfigMap>> r) {
+        Future<ReconciliationState> withKafkaAncillaryCmChanged(boolean onlyMetricsSettingChanged, Future<ReconcileResult<ConfigMap>> r) {
             return r.map(rr -> {
-                this.kafkaForcedRestart = rr instanceof ReconcileResult.Patched;
+                if (onlyMetricsSettingChanged) {
+                    log.debug("Only metrics setting changed - not triggering rolling update");
+                    this.kafkaForcedRestart = false;
+                } else {
+                    this.kafkaForcedRestart = rr instanceof ReconcileResult.Patched;
+                }
                 return this;
             });
         }
@@ -726,7 +758,29 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         }
 
         Future<ReconciliationState> kafkaAncillaryCm() {
-            return withKafkaAncillaryCmChanged(configMapOperations.reconcile(namespace, kafkaCluster.getAncillaryConfigName(), kafkaMetricsAndLogsConfigMap));
+            Future<ReconciliationState> result = Future.future();
+
+            vertx.createSharedWorkerExecutor("kubernetes-ops-pool").executeBlocking(
+                future -> {
+                    ConfigMap current = configMapOperations.get(namespace, kafkaCluster.getAncillaryConfigName());
+                    boolean onlyMetricsSettingChanged = onlyMetricsSettingChanged(current, kafkaMetricsAndLogsConfigMap);
+                    future.complete(onlyMetricsSettingChanged);
+                }, res -> {
+                    if (res.succeeded())  {
+                        boolean onlyMetricsSettingChanged = (boolean) res.result();
+                        withZkAncillaryCmChanged(onlyMetricsSettingChanged, configMapOperations.reconcile(namespace, kafkaCluster.getAncillaryConfigName(), kafkaMetricsAndLogsConfigMap)).setHandler(res2 -> {
+                            if (res2.succeeded())   {
+                                result.complete(res2.result());
+                            } else {
+                                result.fail(res2.cause());
+                            }
+                        });
+                    } else {
+                        result.fail(res.cause());
+                    }
+                });
+
+            return result;
         }
 
         Future<ReconciliationState> kafkaClientsCaSecret() {
